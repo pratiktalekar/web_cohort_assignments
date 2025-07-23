@@ -40,12 +40,13 @@
   Testing the server - run `npm run test-todoServer` command in terminal
  */
   const express = require('express');
-  import{v1 as uuidv1} from uuid;
-  const fs = require("fs")
+  const {v1 : v1uuid} = require('uuid');
+  const fs = require("fs").promises;
   const bodyParser = require('body-parser');
   
   const app = express();
-  filePath = './files/todo_data.json';
+  const filePath = './files/todo_data.json';
+  
   app.use(bodyParser.json());
   app.use(express.json())
 
@@ -55,16 +56,15 @@
     Example: GET http://localhost:3000/todos
   */
 
-  app.get("/todos", (req, res) => {
-    data = fs.readFileSync(filePath, 'utf-8');
-    todos = JSON.parse(data)
-    if (!data){
-      res.status(404).json({
-        msg: "there was problem fetching data"
-      });
-      return;
+  app.get("/todos", async (req, res) => {
+    try {
+      const data = await fs.readFile(filePath, 'utf-8');
+      const todos = JSON.parse(data)
+      res.status(200).json(todos)
     }
-    res.status(200).json(todos);
+    catch {
+      res.status(500).json({ msg : "unable to fetch data"});
+    }
   })
 
   /*2.GET /todos/:id - Retrieve a specific todo item by ID
@@ -74,17 +74,17 @@
     
   */
 
-  app.get("todos/:id", (req, res) => {
-    const id = parseInt(req.params.id)
-    data = fs.readFileSync("/files/todo_data.json");
-    todos = JSON.parse(data)
-    user_data = todos.find(t => t.id === id)
-
-    if(!user_data) {
-      res.status(404).json({msg : "data not found"})
-      return;
+  app.get("/todos/:id", async (req, res) => {
+    try {
+      const id = req.params.id
+      const data = await fs.readFile(filePath, "utf-8");
+      const todos = JSON.parse(data)
+      const user_data = todos.find(t => t.id === id)
+      res.status(200).json(user_data)
     }
-    res.status(200).json(user_data)
+    catch {
+      res.status(404).json({msg : "data not found"})
+    }
   })
 
 /*3. POST /todos - Create a new todo item
@@ -95,17 +95,26 @@
     Request Body: { "title": "Buy groceries", "completed": false, description: "I should buy groceries" }
     */
    
-  app.post("/todos", (req, res) => {
-    const u_id = uuidv1();
-    let todo = {
-        id : u_id,
+  app.post("/todos", async (req, res) => {
+    try {
+      const todo = {
+        id : uuidv1(),
         title : req.body.title,
         description : req.body.description,
         completed : false
-    }
-    fs.writeFileSync(filePath, todo, 'utf-8')
+      }
+      const data = await fs.readFile(filePath, 'utf-8')
+      const json_data = JSON.parse(data)
 
-    res.status(200).json({msg : `created with ${u_id}`})
+      json_data.push(todo)
+
+      await fs.writeFile(filePath, JSON.stringify(json_data));
+      
+      res.status(201).json({msg : "created todo sucessfully"})
+    }
+    catch {
+      res.status(404).json({msg : "there was error writing your data"})
+    }
   })
 
   /* 4. PUT /todos/:id - Update an existing todo item by ID
@@ -117,19 +126,53 @@
 
   */
 
-  app.put("/todos/:id", (req, res) => {
-    const id = parseInt(req.params.id)
-    data = fs.readFileSync("/files/todo_data.json");
-    todos = JSON.parse(data)
-    user_data = todos.find(t => t.id === id)
+  app.put("/todos/:id", async (req, res) => {
+    try {
+      const id = req.params.id
+      data = await fs.readFile("/files/todo_data.json");
+      todos = JSON.parse(data)
+      userIndex = todos.findIndex(t => t.id === id)
 
-    if(!user_data) {
-      res.status(404).json({msg : "data not found"})
-    } else {
-      
+      if (user_index == -1) {
+        res.status(404).json({msg : "user not found"})
+      }
+
+      updated_data = req.body;
+      user_data = todos[userIndex]
+      todos[userIndex] = [...user_data, ...updated_data]
+      await fs.writeFile(filePath, JSON.stringify(todos));
+      res.status(200).json({ msg: "Todo updated successfully" });
+
+    } catch {
+       res.status(404).json({msg : "there was error updating your data"})
     }
-})
 
-  
+  })
+
+/*
+5. DELETE /todos/:id - Delete a todo item by ID
+    Description: Deletes a todo item identified by its ID.
+    Response: 200 OK if the todo item was found and deleted, or 404 Not Found if not found.
+    Example: DELETE http://localhost:3000/todos/123
+
+*/
+
+app.delete("/todos/:id", async (req, res) => {
+  try {
+    const id = req.params.id
+    data = await fs.readFile(filePath, 'utf-8');
+    todos = JSON.parse(data)
+    user_index = todos.findIndex(t => t.id === id)
+    if (user_index == -1) {
+      res.status(404).json({msg : "user not found"})
+    }
+    todos.splice(user_index, 1)
+    await fs.writeFile(filePath, JSON.stringify(todos))
+
+    res.status(200).json({msg : "todo deleted sucessfully"})
+    } catch {
+    res.status(404).json({msg : "there was error deleting todo"})
+  }
+})
   
   module.exports = app;
